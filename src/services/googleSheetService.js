@@ -1,10 +1,13 @@
 /**
  * Google Sheet API Integration Service for Student Progress Lookup
- * Sheet Name: 'tracuu'
+ * Optimized for High Concurrency, Fast Response & Resilient Retries
  */
 
-// Default Fallback Google Apps Script Deployment URL (User can update in Settings Modal)
-export const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx_DEMO_WEB_APP_URL/exec';
+// Default Fallback Google Apps Script Deployment URL
+export const DEFAULT_SCRIPT_URL = '';
+
+const CACHE_KEY = 'TRACUU_CACHE_DATA_V1';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute client-side cache
 
 /**
  * Get active Web App URL from localStorage or environment variable
@@ -111,49 +114,100 @@ const MOCK_TRACUU_DATA = [
   }
 ];
 
+// Active in-flight Promise to deduplicate concurrent calls
+let inFlightPromise = null;
+
 /**
- * Fetch all records from sheet 'tracuu'
+ * Fetch all records from sheet 'tracuu' with Client Caching & Retry Backoff
  */
-export async function fetchTraCuuData() {
+export async function fetchTraCuuData(forceRefresh = false) {
   const url = getScriptUrl();
 
-  // If no URL is set, return demonstration mock data with a warning flag
+  // Return Demo mock data if no URL is specified
   if (!url) {
-    console.warn('Google Script URL chưa được cấu hình. Sử dụng dữ liệu demo mẫu.');
-    return {
-      isMock: true,
-      data: MOCK_TRACUU_DATA
-    };
+    return { isMock: true, data: MOCK_TRACUU_DATA };
   }
 
-  try {
+  // 1. Check Session Storage Cache (reduces server calls for high traffic)
+  if (!forceRefresh) {
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { timestamp, data } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_TTL_MS) {
+          return { isMock: false, data, cached: true };
+        }
+      }
+    } catch (e) {
+      // Ignore cache errors
+    }
+  }
+
+  // 2. Deduplicate simultaneous in-flight requests
+  if (inFlightPromise) {
+    return inFlightPromise;
+  }
+
+  inFlightPromise = (async () => {
     const fetchUrl = `${url}?sheet=tracuu`;
-    const response = await fetch(fetchUrl, {
-      method: 'GET',
-      mode: 'cors'
-    });
+    let retries = 3;
+    let delay = 800;
 
-    if (!response.ok) {
-      throw new Error(`HTTP Error status: ${response.status}`);
+    while (retries > 0) {
+      try {
+        const response = await fetch(fetchUrl, {
+          method: 'GET',
+          mode: 'cors',
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const json = await response.json();
+        let extractedData = null;
+
+        if (json.status === 'success' && Array.isArray(json.data)) {
+          extractedData = json.data;
+        } else if (json.data && json.data.traCuuItems) {
+          extractedData = json.data.traCuuItems;
+        }
+
+        if (extractedData) {
+          // Store in Session Cache
+          try {
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+              timestamp: Date.now(),
+              data: extractedData
+            }));
+          } catch (e) {}
+
+          return { isMock: false, data: extractedData };
+        } else {
+          throw new Error(json.message || 'Dữ liệu không hợp lệ từ Google Sheets');
+        }
+      } catch (err) {
+        retries--;
+        if (retries === 0) {
+          inFlightPromise = null;
+          throw err;
+        }
+        // Wait exponential backoff before retry
+        await new Promise(res => setTimeout(res, delay));
+        delay *= 1.5;
+      }
     }
+  })();
 
-    const json = await response.json();
-
-    if (json.status === 'success' && Array.isArray(json.data)) {
-      return {
-        isMock: false,
-        data: json.data
-      };
-    } else if (json.data && json.data.traCuuItems) {
-      return {
-        isMock: false,
-        data: json.data.traCuuItems
-      };
-    } else {
-      throw new Error(json.message || 'Không thể đọc dữ liệu từ sheet tracuu');
-    }
+  try {
+    const result = await inFlightPromise;
+    inFlightPromise = null;
+    return result;
   } catch (err) {
-    console.error('Lỗi khi fetch dữ liệu Google Sheets:', err);
+    inFlightPromise = null;
     throw err;
   }
 }
