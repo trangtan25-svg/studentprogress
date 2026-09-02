@@ -3,29 +3,23 @@ import Header from './components/Header';
 import SearchHero from './components/SearchHero';
 import StudentCard from './components/StudentCard';
 import ProgressTimeline from './components/ProgressTimeline';
-import ApiSettingsModal from './components/ApiSettingsModal';
 import EmptyState from './components/EmptyState';
 import LoadingSkeleton from './components/LoadingSkeleton';
 import { 
   fetchTraCuuData, 
   filterStudentRecords, 
-  groupRecordsByStudent, 
-  getScriptUrl 
+  groupRecordsByStudent 
 } from './services/googleSheetService';
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const [scriptUrl, setScriptUrl] = useState(getScriptUrl());
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const [searchCategory, setSearchCategory] = useState('sdt');
   const [searchInput, setSearchInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   
   const [students, setStudents] = useState([]);
   const [selectedStudentIdx, setSelectedStudentIdx] = useState(0);
-  const [isMockData, setIsMockData] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   // Update root HTML theme attribute
@@ -50,8 +44,6 @@ export default function App() {
 
     try {
       const result = await fetchTraCuuData();
-      setIsMockData(result.isMock);
-
       const rawMatchedRecords = filterStudentRecords(result.data, query);
       const groupedStudents = groupRecordsByStudent(rawMatchedRecords);
 
@@ -83,9 +75,6 @@ export default function App() {
       <Header
         theme={theme}
         onToggleTheme={toggleTheme}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        isMock={isMockData || !scriptUrl}
-        scriptUrl={scriptUrl}
       />
 
       {/* Main Content Area */}
@@ -93,8 +82,6 @@ export default function App() {
         
         {/* Search Hero Box */}
         <SearchHero
-          searchCategory={searchCategory}
-          onChangeCategory={setSearchCategory}
           searchInput={searchInput}
           setSearchInput={setSearchInput}
           onSearch={handleSearch}
@@ -156,25 +143,10 @@ export default function App() {
 
       {/* Footer */}
       <footer className="no-print" style={{ borderTop: '1px solid var(--border-subtle)', padding: '24px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <p>© {new Date().getFullYear()} Cổng Tra Cứu Tiến Độ Học Viên. Tối ưu cho Vercel & Google Sheets.</p>
-          <p style={{ display: 'flex', gap: '16px' }}>
-            <span style={{ cursor: 'pointer', color: 'var(--accent-primary)' }} onClick={() => setIsSettingsOpen(true)}>
-              Cài đặt Web App API
-            </span>
-          </p>
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          <p>© {new Date().getFullYear()} Cổng Tra Cứu Học Viên.</p>
         </div>
       </footer>
-
-      {/* API Settings Modal */}
-      <ApiSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSaveSuccess={() => {
-          setScriptUrl(getScriptUrl());
-          if (searchInput) handleSearch();
-        }}
-      />
 
     </div>
   );
