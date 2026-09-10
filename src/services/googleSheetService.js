@@ -1,13 +1,17 @@
 /**
  * Google Sheet API Integration Service for Student Progress Lookup
- * Optimized for High Concurrency, Fast Response & Resilient Retries
+ * (Giải Pháp Tối Ưu Tốc Độ Tức Thì 0s Phía Frontend - Không Cần Sửa Code.gs)
  */
 
-// Default Fallback Google Apps Script Deployment URL
 export const DEFAULT_SCRIPT_URL = '';
 
-const CACHE_KEY = 'TRACUU_CACHE_DATA_V1';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute client-side cache
+const CACHE_KEY = 'TRACUU_CACHE_DATA_V2';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute client-side memory & session cache
+
+// Global in-memory cache for 0ms instant searches
+let memoryCache = null;
+let memoryCacheTimestamp = 0;
+let inFlightPromise = null;
 
 /**
  * Get active Web App URL from localStorage or environment variable
@@ -114,11 +118,8 @@ const MOCK_TRACUU_DATA = [
   }
 ];
 
-// Active in-flight Promise to deduplicate concurrent calls
-let inFlightPromise = null;
-
 /**
- * Fetch all records from sheet 'tracuu' with Client Caching & Retry Backoff
+ * Fetch all records from sheet 'tracuu' with Smart Instant Client-side Cache
  */
 export async function fetchTraCuuData(forceRefresh = false) {
   const url = getScriptUrl();
@@ -128,30 +129,37 @@ export async function fetchTraCuuData(forceRefresh = false) {
     return { isMock: true, data: MOCK_TRACUU_DATA };
   }
 
-  // 1. Check Session Storage Cache (reduces server calls for high traffic)
+  const now = Date.now();
+
+  // 1. Check in-memory fast cache (0ms response time)
+  if (!forceRefresh && memoryCache && (now - memoryCacheTimestamp < CACHE_TTL_MS)) {
+    return { isMock: false, data: memoryCache, cached: true };
+  }
+
+  // 2. Check Session Storage Cache
   if (!forceRefresh) {
     try {
       const cached = sessionStorage.getItem(CACHE_KEY);
       if (cached) {
         const { timestamp, data } = JSON.parse(cached);
-        if (Date.now() - timestamp < CACHE_TTL_MS) {
+        if (now - timestamp < CACHE_TTL_MS) {
+          memoryCache = data;
+          memoryCacheTimestamp = timestamp;
           return { isMock: false, data, cached: true };
         }
       }
-    } catch (e) {
-      // Ignore cache errors
-    }
+    } catch (e) {}
   }
 
-  // 2. Deduplicate simultaneous in-flight requests
+  // 3. Deduplicate simultaneous in-flight requests
   if (inFlightPromise) {
     return inFlightPromise;
   }
 
   inFlightPromise = (async () => {
     const fetchUrl = `${url}?sheet=tracuu`;
-    let retries = 3;
-    let delay = 800;
+    let retries = 2;
+    let delay = 600;
 
     while (retries > 0) {
       try {
@@ -177,10 +185,12 @@ export async function fetchTraCuuData(forceRefresh = false) {
         }
 
         if (extractedData) {
-          // Store in Session Cache
+          // Update memory & session storage
+          memoryCache = extractedData;
+          memoryCacheTimestamp = Date.now();
           try {
             sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-              timestamp: Date.now(),
+              timestamp: memoryCacheTimestamp,
               data: extractedData
             }));
           } catch (e) {}
@@ -195,7 +205,6 @@ export async function fetchTraCuuData(forceRefresh = false) {
           inFlightPromise = null;
           throw err;
         }
-        // Wait exponential backoff before retry
         await new Promise(res => setTimeout(res, delay));
         delay *= 1.5;
       }
