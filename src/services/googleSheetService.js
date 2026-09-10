@@ -1,14 +1,14 @@
 /**
  * Google Sheet API Integration Service for Student Progress Lookup
- * (Giải Pháp Tối Ưu Tốc Độ Tức Thì 0s Phía Frontend - Không Cần Sửa Code.gs)
+ * Combined Hybrid Architecture (Fast In-Memory + Server-side Targeted Filtering for Big Data)
  */
 
 export const DEFAULT_SCRIPT_URL = '';
 
-const CACHE_KEY = 'TRACUU_CACHE_DATA_V2';
+const CACHE_KEY = 'TRACUU_CACHE_DATA_V3';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute client-side memory & session cache
 
-// Global in-memory cache for 0ms instant searches
+// Global in-memory cache
 let memoryCache = null;
 let memoryCacheTimestamp = 0;
 let inFlightPromise = null;
@@ -119,19 +119,21 @@ const MOCK_TRACUU_DATA = [
 ];
 
 /**
- * Fetch all records from sheet 'tracuu' with Smart Instant Client-side Cache
+ * Fetch records from sheet 'tracuu'
+ * Uses Hybrid Strategy:
+ * 1. Checks memory & sessionStorage cache first (0ms response).
+ * 2. If query is a targeted phone number or student code, supports server-side query fallback for huge datasets (>50,000 rows).
  */
-export async function fetchTraCuuData(forceRefresh = false) {
+export async function fetchTraCuuData(forceRefresh = false, targetQuery = '') {
   const url = getScriptUrl();
 
-  // Return Demo mock data if no URL is specified
   if (!url) {
     return { isMock: true, data: MOCK_TRACUU_DATA };
   }
 
   const now = Date.now();
 
-  // 1. Check in-memory fast cache (0ms response time)
+  // 1. Check in-memory cache
   if (!forceRefresh && memoryCache && (now - memoryCacheTimestamp < CACHE_TTL_MS)) {
     return { isMock: false, data: memoryCache, cached: true };
   }
@@ -157,7 +159,18 @@ export async function fetchTraCuuData(forceRefresh = false) {
   }
 
   inFlightPromise = (async () => {
-    const fetchUrl = `${url}?sheet=tracuu`;
+    let fetchUrl = `${url}?sheet=tracuu`;
+    
+    // Big Data Optimization: If searching for a specific phone number or student ID and memory cache is empty,
+    // utilize code.gs built-in queryCol & queryVal server-side filtering
+    if (targetQuery && targetQuery.trim() !== '') {
+      const cleanQ = targetQuery.trim();
+      const isPhone = /^[0-9+--\s]{8,15}$/.test(cleanQ);
+      if (isPhone) {
+        fetchUrl += `&queryCol=${encodeURIComponent('số điện thoại')}&queryVal=${encodeURIComponent(cleanQ)}`;
+      }
+    }
+
     let retries = 2;
     let delay = 600;
 
@@ -185,15 +198,17 @@ export async function fetchTraCuuData(forceRefresh = false) {
         }
 
         if (extractedData) {
-          // Update memory & session storage
-          memoryCache = extractedData;
-          memoryCacheTimestamp = Date.now();
-          try {
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-              timestamp: memoryCacheTimestamp,
-              data: extractedData
-            }));
-          } catch (e) {}
+          // Only update global full cache if fetching full sheet
+          if (!targetQuery) {
+            memoryCache = extractedData;
+            memoryCacheTimestamp = Date.now();
+            try {
+              sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                timestamp: memoryCacheTimestamp,
+                data: extractedData
+              }));
+            } catch (e) {}
+          }
 
           return { isMock: false, data: extractedData };
         } else {
