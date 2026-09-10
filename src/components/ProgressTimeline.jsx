@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Calendar, CheckCircle, MessageSquare, Lightbulb, Search, Filter } from 'lucide-react';
+import { Calendar, CheckCircle, MessageSquare, Lightbulb, Search, Filter, ArrowUpDown } from 'lucide-react';
 
 export default function ProgressTimeline({ sessions }) {
   const [filterQuery, setFilterQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Mới nhất lên đầu, 'asc' = Cũ nhất lên đầu
 
   const filteredSessions = sessions.filter(session => {
     if (!filterQuery.trim()) return true;
@@ -14,6 +15,15 @@ export default function ProgressTimeline({ sessions }) {
       (session.teacherSuggestion && session.teacherSuggestion.toLowerCase().includes(q)) ||
       (session.progressId && session.progressId.toLowerCase().includes(q))
     );
+  });
+
+  // Sort sessions based on user preference (default: newest first)
+  const sortedSessions = [...filteredSessions].sort((a, b) => {
+    if (sortOrder === 'desc') {
+      return (b.sortTimestamp || 0) - (a.sortTimestamp || 0);
+    } else {
+      return (a.sortTimestamp || 0) - (b.sortTimestamp || 0);
+    }
   });
 
   const getResultBadgeClass = (resultText) => {
@@ -34,7 +44,7 @@ export default function ProgressTimeline({ sessions }) {
   return (
     <div className="glass-card" style={{ padding: '28px' }}>
       
-      {/* Title Bar & Inner Search Filter */}
+      {/* Title Bar & Inner Search/Sort Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '28px' }}>
         <div>
           <h3 style={{ fontSize: '1.35rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
@@ -45,9 +55,24 @@ export default function ProgressTimeline({ sessions }) {
           </p>
         </div>
 
-        {/* Filter Input */}
-        <div className="no-print" style={{ minWidth: '240px' }}>
-          <div className="input-group">
+        {/* Filter Input & Sort Selector */}
+        <div className="no-print" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          
+          {/* Sort Selector Button */}
+          <div style={{ position: 'relative' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+              title="Đổi thứ tự sắp xếp (Mới nhất / Cũ nhất)"
+              style={{ height: '38px', fontSize: '0.85rem', padding: '0 14px', gap: '6px' }}
+            >
+              <ArrowUpDown size={15} color="var(--accent-primary)" />
+              <span>{sortOrder === 'desc' ? 'Mới nhất trước' : 'Cũ nhất trước'}</span>
+            </button>
+          </div>
+
+          {/* Filter Input */}
+          <div className="input-group" style={{ width: '220px' }}>
             <Filter className="input-icon" size={16} />
             <input
               type="text"
@@ -58,11 +83,12 @@ export default function ProgressTimeline({ sessions }) {
               style={{ height: '38px', fontSize: '0.875rem', paddingLeft: '38px' }}
             />
           </div>
+
         </div>
       </div>
 
       {/* Timeline List */}
-      {filteredSessions.length === 0 ? (
+      {sortedSessions.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
           <Search size={36} style={{ marginBottom: '12px', opacity: 0.5 }} />
           <p style={{ fontWeight: 600 }}>Không tìm thấy buổi học nào phù hợp với từ khóa lọc "{filterQuery}".</p>
@@ -81,14 +107,14 @@ export default function ProgressTimeline({ sessions }) {
             borderRadius: '2px'
           }} />
 
-          {filteredSessions.map((session, index) => {
+          {sortedSessions.map((session, index) => {
             const badgeClass = getResultBadgeClass(session.result);
             return (
               <div 
                 key={session.progressId || index} 
                 style={{ 
                   position: 'relative', 
-                  marginBottom: index === filteredSessions.length - 1 ? 0 : '32px' 
+                  marginBottom: index === sortedSessions.length - 1 ? 0 : '32px' 
                 }}
               >
                 {/* Timeline Dot Node */}

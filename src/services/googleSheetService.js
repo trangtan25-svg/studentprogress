@@ -328,6 +328,14 @@ export function groupRecordsByStudent(records) {
       }
     }
     
+    // Fallback: Use numeric extraction from Mã tiến độ (e.g. TD1005 -> 1005) if date timestamp is missing
+    if (!sortTimestamp && item['Mã tiến độ']) {
+      const numMatch = String(item['Mã tiến độ']).match(/\d+/);
+      if (numMatch) {
+        sortTimestamp = parseInt(numMatch[0], 10);
+      }
+    }
+    
     if (!studentMap[studentId]) {
       studentMap[studentId] = {
         studentId: studentId,
