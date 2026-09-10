@@ -1,9 +1,32 @@
 import React, { useState } from 'react';
-import { Calendar, CheckCircle, MessageSquare, Lightbulb, Search, Filter, ArrowUpDown } from 'lucide-react';
+import { 
+  Calendar, 
+  CheckCircle, 
+  MessageSquare, 
+  Lightbulb, 
+  Search, 
+  Filter, 
+  ArrowUpDown, 
+  ChevronDown, 
+  ChevronUp, 
+  Maximize2, 
+  Minimize2 
+} from 'lucide-react';
 
 export default function ProgressTimeline({ sessions }) {
   const [filterQuery, setFilterQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Mới nhất lên đầu, 'asc' = Cũ nhất lên đầu
+
+  // Track expanded state for each session (by progressId or index)
+  // Default: expand the first session for instant preview
+  const [expandedIds, setExpandedIds] = useState(() => {
+    const initial = {};
+    if (sessions && sessions.length > 0) {
+      const firstId = sessions[0].progressId || 'session-0';
+      initial[firstId] = true;
+    }
+    return initial;
+  });
 
   const filteredSessions = sessions.filter(session => {
     if (!filterQuery.trim()) return true;
@@ -26,6 +49,27 @@ export default function ProgressTimeline({ sessions }) {
     }
   });
 
+  const toggleExpand = (id) => {
+    setExpandedIds(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const isAllExpanded = sortedSessions.length > 0 && sortedSessions.every((s, i) => expandedIds[s.progressId || `session-${i}`]);
+
+  const toggleExpandAll = () => {
+    if (isAllExpanded) {
+      setExpandedIds({});
+    } else {
+      const all = {};
+      sortedSessions.forEach((s, i) => {
+        all[s.progressId || `session-${i}`] = true;
+      });
+      setExpandedIds(all);
+    }
+  };
+
   const getResultBadgeClass = (resultText) => {
     if (!resultText) return 'badge-neutral';
     const text = resultText.toLowerCase();
@@ -44,35 +88,44 @@ export default function ProgressTimeline({ sessions }) {
   return (
     <div className="glass-card" style={{ padding: '28px' }}>
       
-      {/* Title Bar & Inner Search/Sort Controls */}
+      {/* Title Bar & Controls Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '28px' }}>
         <div>
           <h3 style={{ fontSize: '1.35rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
             Nhật Ký & Tiến Độ Học Tập <span style={{ fontSize: '0.95rem', color: 'var(--text-muted)', fontWeight: 600 }}>({sessions.length} buổi)</span>
           </h3>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-            Chi tiết các buổi học, kết quả đánh giá và nhận xét từ giáo viên hướng dẫn
+            Chi tiết các buổi học, kết quả đánh giá và nhận xét từ giáo viên hướng dẫn (bấm vào ô ngày học để xổ chi tiết)
           </p>
         </div>
 
-        {/* Filter Input & Sort Selector */}
+        {/* Filter Input, Sort Selector & Expand/Collapse All Button */}
         <div className="no-print" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           
+          {/* Expand / Collapse All Toggle Button */}
+          <button
+            className="btn btn-secondary"
+            onClick={toggleExpandAll}
+            title={isAllExpanded ? 'Thu gọn tất cả buổi học' : 'Mở rộng tất cả buổi học'}
+            style={{ height: '38px', fontSize: '0.85rem', padding: '0 12px', gap: '6px' }}
+          >
+            {isAllExpanded ? <Minimize2 size={15} color="var(--accent-primary)" /> : <Maximize2 size={15} color="var(--accent-primary)" />}
+            <span>{isAllExpanded ? 'Thu gọn hết' : 'Mở hết'}</span>
+          </button>
+
           {/* Sort Selector Button */}
-          <div style={{ position: 'relative' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
-              title="Đổi thứ tự sắp xếp (Mới nhất / Cũ nhất)"
-              style={{ height: '38px', fontSize: '0.85rem', padding: '0 14px', gap: '6px' }}
-            >
-              <ArrowUpDown size={15} color="var(--accent-primary)" />
-              <span>{sortOrder === 'desc' ? 'Mới nhất trước' : 'Cũ nhất trước'}</span>
-            </button>
-          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+            title="Đổi thứ tự sắp xếp (Mới nhất / Cũ nhất)"
+            style={{ height: '38px', fontSize: '0.85rem', padding: '0 14px', gap: '6px' }}
+          >
+            <ArrowUpDown size={15} color="var(--accent-primary)" />
+            <span>{sortOrder === 'desc' ? 'Mới nhất trước' : 'Cũ nhất trước'}</span>
+          </button>
 
           {/* Filter Input */}
-          <div className="input-group" style={{ width: '220px' }}>
+          <div className="input-group" style={{ width: '200px' }}>
             <Filter className="input-icon" size={16} />
             <input
               type="text"
@@ -109,38 +162,53 @@ export default function ProgressTimeline({ sessions }) {
 
           {sortedSessions.map((session, index) => {
             const badgeClass = getResultBadgeClass(session.result);
+            const sessionId = session.progressId || `session-${index}`;
+            const isExpanded = !!expandedIds[sessionId];
+
             return (
               <div 
-                key={session.progressId || index} 
+                key={sessionId} 
                 style={{ 
                   position: 'relative', 
-                  marginBottom: index === sortedSessions.length - 1 ? 0 : '32px' 
+                  marginBottom: index === sortedSessions.length - 1 ? 0 : '24px' 
                 }}
               >
                 {/* Timeline Dot Node */}
                 <div style={{
                   position: 'absolute',
                   left: '-24px',
-                  top: '4px',
+                  top: '16px',
                   width: '16px',
                   height: '16px',
                   borderRadius: '50%',
-                  background: 'var(--bg-primary)',
+                  background: isExpanded ? 'var(--accent-primary)' : 'var(--bg-primary)',
                   border: '3px solid var(--accent-primary)',
-                  boxShadow: '0 0 10px var(--accent-glow)'
+                  boxShadow: isExpanded ? '0 0 12px var(--accent-glow)' : 'none',
+                  transition: 'all 0.2s ease'
                 }} />
 
                 {/* Session Card Box */}
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-subtle)',
+                  background: isExpanded ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.02)',
+                  border: isExpanded ? '1px solid var(--border-medium)' : '1px solid var(--border-subtle)',
                   borderRadius: 'var(--radius-md)',
-                  padding: '20px',
-                  transition: 'all 0.2s ease'
+                  padding: '16px 20px',
+                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
                 }}>
                   
-                  {/* Card Header: Date, ID, Grade Badge */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+                  {/* Clickable Card Header: Date, ID, Grade Badge & Expand Toggle */}
+                  <div 
+                    onClick={() => toggleExpand(sessionId)}
+                    style={{ 
+                      display: 'flex', 
+                      justify: 'space-between', 
+                      alignItems: 'center', 
+                      flexWrap: 'wrap', 
+                      gap: '12px',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <span style={{ 
                         fontWeight: 700, 
@@ -158,33 +226,64 @@ export default function ProgressTimeline({ sessions }) {
                       </span>
                     </div>
 
-                    <span className={`badge ${badgeClass}`}>
-                      <CheckCircle size={14} />
-                      {session.result}
-                    </span>
-                  </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span className={`badge ${badgeClass}`}>
+                        <CheckCircle size={14} />
+                        {session.result}
+                      </span>
 
-                  {/* Teacher Feedback Section */}
-                  <div style={{ marginBottom: '12px', background: 'rgba(0, 0, 0, 0.15)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent-primary)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '4px' }}>
-                      <MessageSquare size={15} />
-                      <span>Nhận xét giáo viên:</span>
-                    </div>
-                    <p style={{ fontSize: '0.925rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                      {session.teacherComment || 'Chưa có ghi nhận'}
-                    </p>
-                  </div>
-
-                  {/* Teacher Recommendation Section */}
-                  {session.teacherSuggestion && (
-                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--status-warning)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--status-warning)', marginBottom: '4px' }}>
-                        <Lightbulb size={15} />
-                        <span>Đề xuất & Bài tập luyện thêm:</span>
+                      {/* Expand/Collapse Trigger Badge */}
+                      <div className="no-print" style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        fontSize: '0.8rem', 
+                        color: 'var(--accent-primary)',
+                        fontWeight: 600,
+                        background: isExpanded ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        transition: 'all 0.2s ease'
+                      }}>
+                        <span>{isExpanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
+                        {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                       </div>
-                      <p style={{ fontSize: '0.925rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                        {session.teacherSuggestion}
-                      </p>
+                    </div>
+                  </div>
+
+                  {/* Collapsible Content Area (Feedback & Recommendation) */}
+                  {isExpanded && (
+                    <div style={{ 
+                      marginTop: '16px', 
+                      paddingTop: '16px', 
+                      borderTop: '1px solid var(--border-subtle)',
+                      animation: 'fadeIn 0.25s ease'
+                    }}>
+                      
+                      {/* Teacher Feedback Section */}
+                      <div style={{ marginBottom: '12px', background: 'rgba(0, 0, 0, 0.15)', padding: '14px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent-primary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '6px' }}>
+                          <MessageSquare size={15} />
+                          <span>Nhận xét giáo viên:</span>
+                        </div>
+                        <p style={{ fontSize: '0.925rem', color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                          {session.teacherComment || 'Chưa có ghi nhận'}
+                        </p>
+                      </div>
+
+                      {/* Teacher Recommendation Section */}
+                      {session.teacherSuggestion && (
+                        <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '14px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--status-warning)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--status-warning)', marginBottom: '6px' }}>
+                            <Lightbulb size={15} />
+                            <span>Đề xuất & Bài tập luyện thêm:</span>
+                          </div>
+                          <p style={{ fontSize: '0.925rem', color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                            {session.teacherSuggestion}
+                          </p>
+                        </div>
+                      )}
+
                     </div>
                   )}
 
