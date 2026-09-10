@@ -287,6 +287,16 @@ h1, h2, h3, h4, h5, h6 {
   100% { background-position: 0 50%; }
 }
 
+/* Spin Animation */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Scrollbar Customization */
 ::-webkit-scrollbar {
   width: 8px;

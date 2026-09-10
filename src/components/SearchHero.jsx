@@ -1,7 +1,7 @@
 import React from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, RotateCw } from 'lucide-react';
 
-export default function SearchHero({ searchInput, setSearchInput, onSearch, isSearching }) {
+export default function SearchHero({ searchInput, setSearchInput, onSearch, onRefresh, isSearching }) {
   
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -54,6 +54,19 @@ export default function SearchHero({ searchInput, setSearchInput, onSearch, isSe
             )}
           </div>
 
+          {/* Refresh Button */}
+          <button
+            className="btn btn-secondary btn-icon"
+            onClick={onRefresh}
+            disabled={isSearching}
+            title="Làm mới dữ liệu mới nhất từ Google Sheets"
+            aria-label="Làm mới dữ liệu"
+            style={{ height: '54px', width: '54px', flexShrink: 0 }}
+          >
+            <RotateCw size={20} className={isSearching ? 'spin' : ''} />
+          </button>
+
+          {/* Search Button */}
           <button
             className="btn btn-primary"
             onClick={() => onSearch()}

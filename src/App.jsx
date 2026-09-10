@@ -32,8 +32,8 @@ export default function App() {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Perform Solution 2 targeted query search
-  const handleSearch = async (overrideQuery) => {
+  // Perform search query (supports forceRefresh = true for Refresh button)
+  const handleSearch = async (overrideQuery, forceRefresh = false) => {
     const query = overrideQuery !== undefined ? overrideQuery : searchInput;
     if (!query || query.trim() === '') {
       return;
@@ -43,8 +43,8 @@ export default function App() {
     setErrorMessage('');
 
     try {
-      // Solution 2: Send targeted queryCol & queryVal request to Google Apps Script for ~1KB response
-      const result = await fetchTraCuuData(false, query);
+      // Fetch data directly from Google Sheets (forceRefresh bypasses client cache)
+      const result = await fetchTraCuuData(forceRefresh, query);
       const rawMatchedRecords = filterStudentRecords(result.data, query);
       const groupedStudents = groupRecordsByStudent(rawMatchedRecords);
 
@@ -58,6 +58,13 @@ export default function App() {
       setHasSearched(true);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  // Handle Refresh button click (bypasses cache and fetches fresh live data)
+  const handleRefresh = () => {
+    if (searchInput && searchInput.trim() !== '') {
+      handleSearch(undefined, true);
     }
   };
 
@@ -86,6 +93,7 @@ export default function App() {
           searchInput={searchInput}
           setSearchInput={setSearchInput}
           onSearch={handleSearch}
+          onRefresh={handleRefresh}
           isSearching={isSearching}
         />
 
