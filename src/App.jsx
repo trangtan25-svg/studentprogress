@@ -28,6 +28,11 @@ export default function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // Pre-fetch sheet data silently on page load for INSTANT (0ms) search experience
+  useEffect(() => {
+    fetchTraCuuData().catch(() => {});
+  }, []);
+
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
@@ -43,6 +48,7 @@ export default function App() {
     setErrorMessage('');
 
     try {
+      // Fast fetch with client cache fallback
       const result = await fetchTraCuuData();
       const rawMatchedRecords = filterStudentRecords(result.data, query);
       const groupedStudents = groupRecordsByStudent(rawMatchedRecords);
@@ -52,7 +58,7 @@ export default function App() {
       setHasSearched(true);
     } catch (err) {
       console.error('Search error:', err);
-      setErrorMessage(err.message || 'Có lỗi xảy ra khi tải dữ liệu từ Google Sheets.');
+      setErrorMessage(err.message || 'Có lỗi xảy ra khi tải dữ liệu từ Google Sheets. Vui lòng thử lại.');
       setStudents([]);
       setHasSearched(true);
     } finally {
