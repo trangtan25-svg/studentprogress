@@ -28,16 +28,11 @@ export default function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Pre-fetch sheet data silently on page load for INSTANT (0ms) search experience
-  useEffect(() => {
-    fetchTraCuuData().catch(() => {});
-  }, []);
-
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Perform search query
+  // Perform Solution 2 targeted query search
   const handleSearch = async (overrideQuery) => {
     const query = overrideQuery !== undefined ? overrideQuery : searchInput;
     if (!query || query.trim() === '') {
@@ -48,8 +43,8 @@ export default function App() {
     setErrorMessage('');
 
     try {
-      // Fast fetch with client cache fallback
-      const result = await fetchTraCuuData();
+      // Solution 2: Send targeted queryCol & queryVal request to Google Apps Script for ~1KB response
+      const result = await fetchTraCuuData(false, query);
       const rawMatchedRecords = filterStudentRecords(result.data, query);
       const groupedStudents = groupRecordsByStudent(rawMatchedRecords);
 

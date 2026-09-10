@@ -1,17 +1,13 @@
 /**
  * Google Sheet API Integration Service for Student Progress Lookup
- * Combined Hybrid Architecture (Fast In-Memory + Server-side Targeted Filtering for Big Data)
+ * Solution 2 Implementation: Server-side Targeted Querying via queryCol & queryVal
+ * (Dung lượng 1KB siêu nhẹ, không tải dư thừa, không cần sửa code.gs)
  */
 
 export const DEFAULT_SCRIPT_URL = '';
 
-const CACHE_KEY = 'TRACUU_CACHE_DATA_V3';
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute client-side memory & session cache
-
-// Global in-memory cache
-let memoryCache = null;
-let memoryCacheTimestamp = 0;
-let inFlightPromise = null;
+const CACHE_KEY_PREFIX = 'TRACUU_TARGET_CACHE_';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute client cache
 
 /**
  * Get active Web App URL from localStorage or environment variable
@@ -119,120 +115,120 @@ const MOCK_TRACUU_DATA = [
 ];
 
 /**
- * Fetch records from sheet 'tracuu'
- * Uses Hybrid Strategy:
- * 1. Checks memory & sessionStorage cache first (0ms response).
- * 2. If query is a targeted phone number or student code, supports server-side query fallback for huge datasets (>50,000 rows).
+ * Determine query column & value for Solution 2 targeted query
  */
-export async function fetchTraCuuData(forceRefresh = false, targetQuery = '') {
+function detectTargetColumn(query) {
+  const cleanQ = query.trim();
+  const normalized = normalizeStr(cleanQ);
+
+  // Check if phone number format (digits, +, spaces, hyphens)
+  if (/^[0-9+--\s]{8,15}$/.test(cleanQ)) {
+    return { queryCol: 'số điện thoại', queryVal: cleanQ };
+  }
+
+  // Check if Student ID format (e.g. HV001, HV123, TD100)
+  if (/^[a-zA-Z]{1,4}[0-9]{1,8}$/.test(cleanQ) || normalized.startsWith('hv')) {
+    return { queryCol: 'Mã học viên', queryVal: cleanQ };
+  }
+
+  // Default to searching Full Name ('Họ và tên')
+  return { queryCol: 'Họ và tên', queryVal: cleanQ };
+}
+
+/**
+ * SOLUTION 2: Fetch targeted student data directly from Google Apps Script
+ * Uses server-side queryCol & queryVal filtering built into code.gs
+ */
+export async function fetchTraCuuData(forceRefresh = false, searchInput = '') {
   const url = getScriptUrl();
 
+  // Return Demo mock data if no URL is specified
   if (!url) {
     return { isMock: true, data: MOCK_TRACUU_DATA };
   }
 
-  const now = Date.now();
+  const query = searchInput ? searchInput.trim() : '';
+  const normQuery = normalizeStr(query);
 
-  // 1. Check in-memory cache
-  if (!forceRefresh && memoryCache && (now - memoryCacheTimestamp < CACHE_TTL_MS)) {
-    return { isMock: false, data: memoryCache, cached: true };
-  }
-
-  // 2. Check Session Storage Cache
-  if (!forceRefresh) {
+  // Check cache for this specific search query
+  if (!forceRefresh && normQuery) {
     try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
+      const cached = sessionStorage.getItem(CACHE_KEY_PREFIX + normQuery);
       if (cached) {
         const { timestamp, data } = JSON.parse(cached);
-        if (now - timestamp < CACHE_TTL_MS) {
-          memoryCache = data;
-          memoryCacheTimestamp = timestamp;
+        if (Date.now() - timestamp < CACHE_TTL_MS) {
           return { isMock: false, data, cached: true };
         }
       }
     } catch (e) {}
   }
 
-  // 3. Deduplicate simultaneous in-flight requests
-  if (inFlightPromise) {
-    return inFlightPromise;
+  // Build targeted URL using Solution 2 (queryCol & queryVal)
+  let fetchUrl = `${url}?sheet=tracuu`;
+  
+  if (query) {
+    const target = detectTargetColumn(query);
+    fetchUrl += `&queryCol=${encodeURIComponent(target.queryCol)}&queryVal=${encodeURIComponent(target.queryVal)}`;
   }
 
-  inFlightPromise = (async () => {
-    let fetchUrl = `${url}?sheet=tracuu`;
-    
-    // Big Data Optimization: If searching for a specific phone number or student ID and memory cache is empty,
-    // utilize code.gs built-in queryCol & queryVal server-side filtering
-    if (targetQuery && targetQuery.trim() !== '') {
-      const cleanQ = targetQuery.trim();
-      const isPhone = /^[0-9+--\s]{8,15}$/.test(cleanQ);
-      if (isPhone) {
-        fetchUrl += `&queryCol=${encodeURIComponent('số điện thoại')}&queryVal=${encodeURIComponent(cleanQ)}`;
+  let retries = 2;
+  let delay = 600;
+
+  while (retries > 0) {
+    try {
+      const response = await fetch(fetchUrl, {
+        method: 'GET',
+        mode: 'cors',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-    }
 
-    let retries = 2;
-    let delay = 600;
+      const json = await response.json();
+      let extractedData = null;
 
-    while (retries > 0) {
-      try {
-        const response = await fetch(fetchUrl, {
-          method: 'GET',
-          mode: 'cors',
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const json = await response.json();
-        let extractedData = null;
-
-        if (json.status === 'success' && Array.isArray(json.data)) {
-          extractedData = json.data;
-        } else if (json.data && json.data.traCuuItems) {
-          extractedData = json.data.traCuuItems;
-        }
-
-        if (extractedData) {
-          // Only update global full cache if fetching full sheet
-          if (!targetQuery) {
-            memoryCache = extractedData;
-            memoryCacheTimestamp = Date.now();
-            try {
-              sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-                timestamp: memoryCacheTimestamp,
-                data: extractedData
-              }));
-            } catch (e) {}
-          }
-
-          return { isMock: false, data: extractedData };
-        } else {
-          throw new Error(json.message || 'Dữ liệu không hợp lệ từ Google Sheets');
-        }
-      } catch (err) {
-        retries--;
-        if (retries === 0) {
-          inFlightPromise = null;
-          throw err;
-        }
-        await new Promise(res => setTimeout(res, delay));
-        delay *= 1.5;
+      if (json.status === 'success' && Array.isArray(json.data)) {
+        extractedData = json.data;
+      } else if (json.data && json.data.traCuuItems) {
+        extractedData = json.data.traCuuItems;
       }
-    }
-  })();
 
-  try {
-    const result = await inFlightPromise;
-    inFlightPromise = null;
-    return result;
-  } catch (err) {
-    inFlightPromise = null;
-    throw err;
+      // Fallback: If targeted queryCol returned empty (e.g. user typed phone with spaces),
+      // fallback to fetching full sheet so client-side flexible normalization catches it
+      if ((!extractedData || extractedData.length === 0) && query) {
+        const fallbackRes = await fetch(`${url}?sheet=tracuu`, { method: 'GET', mode: 'cors' });
+        const fallbackJson = await fallbackRes.json();
+        if (fallbackJson.status === 'success' && Array.isArray(fallbackJson.data)) {
+          extractedData = fallbackJson.data;
+        }
+      }
+
+      if (extractedData) {
+        if (normQuery) {
+          try {
+            sessionStorage.setItem(CACHE_KEY_PREFIX + normQuery, JSON.stringify({
+              timestamp: Date.now(),
+              data: extractedData
+            }));
+          } catch (e) {}
+        }
+
+        return { isMock: false, data: extractedData };
+      } else {
+        throw new Error(json.message || 'Dữ liệu không hợp lệ từ Google Sheets');
+      }
+    } catch (err) {
+      retries--;
+      if (retries === 0) {
+        throw err;
+      }
+      await new Promise(res => setTimeout(res, delay));
+      delay *= 1.5;
+    }
   }
 }
 
