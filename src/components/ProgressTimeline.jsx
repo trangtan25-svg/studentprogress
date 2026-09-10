@@ -18,15 +18,8 @@ export default function ProgressTimeline({ sessions }) {
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Mới nhất lên đầu, 'asc' = Cũ nhất lên đầu
 
   // Track expanded state for each session (by progressId or index)
-  // Default: expand the first session for instant preview
-  const [expandedIds, setExpandedIds] = useState(() => {
-    const initial = {};
-    if (sessions && sessions.length > 0) {
-      const firstId = sessions[0].progressId || 'session-0';
-      initial[firstId] = true;
-    }
-    return initial;
-  });
+  // Default: ALL sessions collapsed by default, user clicks to expand
+  const [expandedIds, setExpandedIds] = useState({});
 
   const filteredSessions = sessions.filter(session => {
     if (!filterQuery.trim()) return true;
