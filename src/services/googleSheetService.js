@@ -1,11 +1,11 @@
 /**
  * Google Sheet API Integration Service for Student Progress Lookup
- * Ultra-Fast Single Request Architecture + Instant 0ms Memory Search
+ * Ultra-Fast Single Request Architecture + 100% Robust Multi-Field Search (SĐT, Mã HV, Họ và tên)
  */
 
 export const DEFAULT_SCRIPT_URL = '';
 
-const CACHE_KEY = 'TRACUU_SINGLE_CACHE_V4';
+const CACHE_KEY = 'TRACUU_SINGLE_CACHE_V5';
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute fast client cache
 
 // Global in-memory cache
@@ -31,7 +31,7 @@ export function getScriptUrl() {
  * Helper to remove Vietnamese accents and normalize string for flexible matching
  */
 export function normalizeStr(str) {
-  if (!str) return '';
+  if (str === undefined || str === null) return '';
   return String(str)
     .toLowerCase()
     .trim()
@@ -156,7 +156,6 @@ export async function fetchTraCuuData(forceRefresh = false) {
   }
 
   inFlightPromise = (async () => {
-    // SINGLE DIRECT REQUEST - No double request penalty!
     const fetchUrl = `${url}?sheet=tracuu`;
 
     try {
@@ -212,7 +211,64 @@ export async function fetchTraCuuData(forceRefresh = false) {
 }
 
 /**
- * Filter student records by query (Phone, Student Code, or Name)
+ * Helper to clean and format dates matching Google Sheets data in Vietnam timezone (ICT / UTC+7).
+ * Converts ISO UTC timestamps (e.g., 2026-08-24T17:00:00.000Z) back to local Vietnam dates (25/08/2026)
+ * and strips out any unwanted UTC / time strings.
+ */
+export function formatDateForDisplay(dateVal) {
+  if (dateVal === undefined || dateVal === null) return 'Chưa ghi nhận';
+  const str = String(dateVal).trim();
+  if (!str) return 'Chưa ghi nhận';
+
+  // 1. Check if string matches plain DD/MM/YYYY or D/M/YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const [, day, month, year] = dmyMatch;
+    return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+  }
+
+  // 2. Check if string matches plain YYYY-MM-DD or YYYY/MM/DD without time component
+  const ymdMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (ymdMatch) {
+    const [, year, month, day] = ymdMatch;
+    return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+  }
+
+  // 3. For ISO timestamps (e.g. 2026-08-24T17:00:00.000Z) or strings containing T/Z/GMT
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    try {
+      // Force Vietnam Timezone (Asia/Ho_Chi_Minh, GMT+7)
+      const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      const parts = formatter.formatToParts(d);
+      const day = parts.find(p => p.type === 'day')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const year = parts.find(p => p.type === 'year')?.value;
+
+      if (day && month && year) {
+        return `${day}/${month}/${year}`;
+      }
+    } catch (e) {
+      // Fallback if Intl is not available
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+  }
+
+  // 4. Fallback: Return original trimmed string
+  return str;
+}
+
+/**
+ * Filter student records by query (Phone, Student Code, OR Full Name)
+ * Uses 100% resilient dynamic key matching for all 3 fields.
  */
 export function filterStudentRecords(allData, query) {
   if (!query || query.trim() === '') return [];
@@ -220,10 +276,28 @@ export function filterStudentRecords(allData, query) {
   const normQuery = normalizeStr(query);
 
   return allData.filter(item => {
-    const sdt = normalizeStr(item['số điện thoại'] || item['Số điện thoại'] || item['sdt']);
-    const mahv = normalizeStr(item['Mã học viên'] || item['Mã HV']);
-    const hoten = normalizeStr(item['Họ và tên'] || item['Họ và tên'] || item['Tên học viên']);
+    let sdt = '';
+    let mahv = '';
+    let hoten = '';
 
+    // Dynamic key matching to handle column headers regardless of accents/spaces/case
+    for (const k in item) {
+      const normK = normalizeStr(k);
+      if (normK.includes('sodienthoai') || normK === 'sdt' || normK === 'phone') {
+        sdt = normalizeStr(item[k]);
+      } else if (normK.includes('mahocvien') || normK === 'mahv' || normK === 'studentid') {
+        mahv = normalizeStr(item[k]);
+      } else if (normK.includes('hovaten') || normK === 'hoten' || normK === 'studentname') {
+        hoten = normalizeStr(item[k]);
+      }
+    }
+
+    // Direct key fallback
+    if (!sdt) sdt = normalizeStr(item['số điện thoại'] || item['Số điện thoại'] || item['sdt']);
+    if (!mahv) mahv = normalizeStr(item['Mã học viên'] || item['Mã HV']);
+    if (!hoten) hoten = normalizeStr(item['Họ và tên'] || item['Họ và tên']);
+
+    // Check if query matches ANY of the 3 fields
     return sdt.includes(normQuery) || mahv.includes(normQuery) || hoten.includes(normQuery);
   });
 }
@@ -236,6 +310,23 @@ export function groupRecordsByStudent(records) {
 
   records.forEach(item => {
     const studentId = (item['Mã học viên'] || item['Mã HV'] || 'UNKNOWN').trim();
+    const rawDate = item['Ngày đi học'] || item['Ngày học'] || item['Ngày'] || '';
+    const displayDate = formatDateForDisplay(rawDate);
+
+    // Calculate numeric timestamp for accurate sorting
+    let sortTimestamp = 0;
+    if (rawDate) {
+      const parsedDate = new Date(rawDate);
+      if (!isNaN(parsedDate.getTime())) {
+        sortTimestamp = parsedDate.getTime();
+      } else {
+        const dmyMatch = String(rawDate).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+        if (dmyMatch) {
+          const [, d, m, y] = dmyMatch;
+          sortTimestamp = new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`).getTime() || 0;
+        }
+      }
+    }
     
     if (!studentMap[studentId]) {
       studentMap[studentId] = {
@@ -250,7 +341,9 @@ export function groupRecordsByStudent(records) {
 
     studentMap[studentId].sessions.push({
       progressId: item['Mã tiến độ'] || 'TD-' + Math.random().toString(36).substring(2, 7),
-      date: item['Ngày đi học'] || item['Ngày học'] || 'Chưa ghi nhận',
+      date: displayDate,
+      rawDate: rawDate,
+      sortTimestamp: sortTimestamp,
       result: item['Kết quả buổi học'] || 'Chưa đánh giá',
       teacherComment: item['Nhận xét giáo viên'] || 'Không có nhận xét',
       teacherSuggestion: item['Đề xuất giáo viên'] || 'Không có đề xuất',
@@ -260,10 +353,9 @@ export function groupRecordsByStudent(records) {
 
   // Sort sessions by date descending (newest first)
   Object.values(studentMap).forEach(student => {
-    student.sessions.sort((a, b) => {
-      return new Date(b.date) - new Date(a.date);
-    });
+    student.sessions.sort((a, b) => b.sortTimestamp - a.sortTimestamp);
   });
 
   return Object.values(studentMap);
 }
+
